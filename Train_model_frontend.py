@@ -184,6 +184,8 @@ class Train_model_frontend(object):
         init or load optimizer
         :return:
         """
+
+        # SuperPointNet_gauss2
         model = self.config["model"]["name"]
         params = self.config["model"]["params"]
         print("model: ", model)

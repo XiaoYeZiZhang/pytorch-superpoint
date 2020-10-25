@@ -125,6 +125,21 @@ def dataLoader_test(config, dataset='syn', warp_input=False, export_task='train'
             num_workers=workers_test,
             worker_init_fn=worker_init_fn
         )
+    elif dataset == 'box':
+        from datasets.my_dataset import MyDataSet
+        if config['data']['preprocessing']['resize']:
+            size = config['data']['preprocessing']['resize']
+        test_set = MyDataSet(
+            transform=data_transforms['test'],
+            **config['data'],
+        )
+        test_loader = torch.utils.data.DataLoader(
+            test_set, batch_size=1, shuffle=False,
+            pin_memory=True,
+            num_workers=workers_test,
+            worker_init_fn=worker_init_fn
+        )
+
     # elif dataset == 'Coco' or 'Kitti' or 'Tum':
     else:
         # from datasets.Kitti import Kitti
@@ -147,6 +162,7 @@ def dataLoader_test(config, dataset='syn', warp_input=False, export_task='train'
 def get_module(path, name):
     import importlib
     if path == '':
+        # name = Val_model_heatmap
         mod = importlib.import_module(name)
     else:
         mod = importlib.import_module('{}.{}'.format(path, name))

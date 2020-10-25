@@ -73,8 +73,9 @@ def train_joint(config, output_dir, args):
     # init the training agent using config file
     # from train_model_frontend import Train_model_frontend
     from utils.loader import get_module
+    # Train_model_heatmap
     train_model_frontend = get_module('', config['front_end_model'])
-
+    # in Train_model_heatmap.py
     train_agent = train_model_frontend(config, save_path=save_path, device=device)
 
     # writer from tensorboard

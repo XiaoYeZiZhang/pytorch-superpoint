@@ -35,6 +35,7 @@ class PatchesDataset(data.Dataset):
     def __init__(self, transform=None, **config):
         self.config = self.default_config
         self.config = dict_update(self.config, config)
+        #得到图像和对应的单应变换图像
         self.files = self._init_dataset(**self.config)
         sequence_set = []
         for (img, img_warped, mat_hom) in zip(self.files['image_paths'], self.files['warped_image_paths'], self.files['homography']):
@@ -62,13 +63,19 @@ class PatchesDataset(data.Dataset):
 
         def _preprocess(image):
             s = max(self.sizer /image.shape[:2])
+            #转换为灰度图
             image = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
             image = image[:int(self.sizer[0]/s),:int(self.sizer[1]/s)]
+            # resize 到240*320
             image = cv2.resize(image, (self.sizer[1], self.sizer[0]),
                                      interpolation=cv2.INTER_AREA)
+            # 除以255
             image = image.astype('float32') / 255.0
+
+            # 扩展到三通道???
             if image.ndim == 2:
                 image = image[:,:, np.newaxis]
+            # to tensor
             if self.transform is not None:
                 image = self.transform(image)
             return image
@@ -90,13 +97,16 @@ class PatchesDataset(data.Dataset):
             # H = tf.matmul(up_scale, tf.matmul(H, down_scale))
             H = H*mat
             return H
+
         sample = self.samples[index]
         image_original = _read_image(sample['image'])
+        # 将原图和单应变换过的图做对应的变换 resize and to tensor
         image = _preprocess(image_original)
         warped_image = _preprocess(_read_image(sample['warped_image']))
         to_numpy = False
         if to_numpy:
             image, warped_image = np.array(image), np.array(warped_image)
+        # 得到单应变换矩阵
         homography = _adapt_homography_to_preprocessing(image_original, sample['homography'])
         sample = {'image': image, 'warped_image': warped_image,
                                     'homography': homography}
@@ -117,8 +127,10 @@ class PatchesDataset(data.Dataset):
                 continue
             if config['alteration'] == 'v' and path.stem[0] != 'v':
                 continue
+
             num_images = 1 if config['dataset'] == 'coco' else 5
             file_ext = '.ppm' if config['dataset'] == 'hpatches' else '.jpg'
+            #对于HPATCHES数据集，剩下的五张都是单应变换后的结果
             for i in range(2, 2 + num_images):
                 image_paths.append(str(Path(path, "1" + file_ext)))
                 warped_image_paths.append(str(Path(path, str(i) + file_ext)))

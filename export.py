@@ -45,6 +45,7 @@ from settings import EXPER_PATH
 
 #### util functions
 
+visualize_for_my_data = False
 
 def combine_heatmap(heatmap, inv_homographies, mask_2D, device="cpu"):
     ## multiply heatmap with mask_2D
@@ -109,9 +110,12 @@ def export_descriptor(config, output_dir, args):
 
     # model loading
     from utils.loader import get_module
+    # front_end_model: Val_model_heatmap
     Val_model_heatmap = get_module("", config["front_end_model"])
     ## load pretrained
+    # 在Val_model_heatmap.py文件中
     val_agent = Val_model_heatmap(config["model"], device=device)
+    # 加载网络和预训练模型
     val_agent.loadModel()
 
     ## tracker
@@ -119,11 +123,14 @@ def export_descriptor(config, output_dir, args):
 
     ###### check!!!
     count = 0
+    # 遍历所有的测试数据
     for i, sample in tqdm(enumerate(test_loader)):
+        #拿到一组图像
         img_0, img_1 = sample["image"], sample["warped_image"]
 
         # first image, no matches
         # img = img_0
+        # 对于一张图像，通过网络得到结果
         def get_pts_desc_from_agent(val_agent, img, device="cpu"):
             """
             pts: list [numpy (3, N)]
@@ -133,12 +140,19 @@ def export_descriptor(config, output_dir, args):
                 img.to(device)
             )  # heatmap: numpy [batch, 1, H, W]
             # heatmap to pts
+            #这个是第一条网络得到的特征点位置信息
+            start = time.time();
             pts = val_agent.heatmap_to_pts()
+            total_time = (time.time() - start)
             # print("pts: ", pts)
+            # true
             if subpixel:
                 pts = val_agent.soft_argmax_points(pts, patch_size=patch_size)
             # heatmap, pts to desc
+            # 根据特征点和网络输出得到描述子
+            start = time.time();
             desc_sparse = val_agent.desc_to_sparseDesc()
+            total_time = (time.time() - start)
             # print("pts[0]: ", pts[0].shape, ", desc_sparse[0]: ", desc_sparse[0].shape)
             # print("pts[0]: ", pts[0].shape)
             outs = {"pts": pts[0], "desc": desc_sparse[0]}
@@ -148,13 +162,19 @@ def export_descriptor(config, output_dir, args):
             for entry in list(outs):
                 outs[entry] = outs[entry].transpose()
 
+        # get keypoints and descriptors
+        ################compute time for single image###################
+        start = time.time()
+        # 据据网络输出，处理得到特征点和描述子
         outs = get_pts_desc_from_agent(val_agent, img_0, device=device)
         pts, desc = outs["pts"], outs["desc"]  # pts: np [3, N]
+        total_time = (time.time() - start)
 
         if outputMatches == True:
             tracker.update(pts, desc)
 
         # save keypoints
+        # 保存图像，特征点和描述子
         pred = {"image": squeezeToNumpy(img_0)}
         pred.update({"prob": pts.transpose(), "desc": desc.transpose()})
 
@@ -167,13 +187,24 @@ def export_descriptor(config, output_dir, args):
 
         pred.update({"warped_image": squeezeToNumpy(img_1)})
         # print("total points: ", pts.shape)
-        pred.update(
-            {
-                "warped_prob": pts.transpose(),
-                "warped_desc": desc.transpose(),
-                "homography": squeezeToNumpy(sample["homography"]),
-            }
-        )
+
+        # mydata
+        if visualize_for_my_data:
+            pred.update(
+                {
+                    "warped_prob": pts.transpose(),
+                    "warped_desc": desc.transpose(),
+                }
+            )
+        else:
+            #patches
+            pred.update(
+                {
+                    "warped_prob": pts.transpose(),
+                    "warped_desc": desc.transpose(),
+                    "homography": squeezeToNumpy(sample["homography"]),
+                }
+            )
 
         if outputMatches == True:
             matches = tracker.get_matches()
@@ -205,7 +236,9 @@ def export_detector_homoAdapt_gpu(config, output_dir, args):
     from utils.draw import draw_keypoints
 
     # basic setting
+    # hpatches
     task = config["data"]["dataset"]
+    # none
     export_task = config["data"]["export_folder"]
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -218,14 +251,14 @@ def export_detector_homoAdapt_gpu(config, output_dir, args):
 
     ## parameters
     nms_dist = config["model"]["nms"]  # 4
-    top_k = config["model"]["top_k"]
-    homoAdapt_iter = config["data"]["homography_adaptation"]["num"]
-    conf_thresh = config["model"]["detection_threshold"]
+    top_k = config["model"]["top_k"] # 1000
+    homoAdapt_iter = config["data"]["homography_adaptation"]["num"] # 0
+    conf_thresh = config["model"]["detection_threshold"] # 0.015
     nn_thresh = 0.7
     outputMatches = True
     count = 0
     max_length = 5
-    output_images = args.outputImg
+    output_images = args.outputImg # false
     check_exist = True
 
     ## save data
@@ -240,6 +273,7 @@ def export_detector_homoAdapt_gpu(config, output_dir, args):
     # data loading
     from utils.loader import dataLoader_test as dataLoader
 
+    # dataset: hpatches
     data = dataLoader(config, dataset=task, export_task=export_task)
     test_set, test_loader = data["test_set"], data["test_loader"]
 

@@ -93,8 +93,10 @@ model:
             method: '2d'
     other_settings: 'train 2d, gauss 0.5'
 
-retrain: True # set true for new model
-reset_iter: True
+retrain: True #False # set true for new model
+reset_iter: True # whether the train iter from 0
+# pretrained: 'logs/superpoint_syn_heat1_0/checkpoints/superPointNet_100000_checkpoint.pth.tar'
+
 
 train_iter: 200000 # 200000
 tensorboard_interval: 1000 # 200
@@ -104,5 +106,5 @@ validation_size: 10
 train_show_interval: 1000 # one show of the current training from to Tensorboard every N training steps
 seed: 0
 
-# pretrained: 'logs/superpoint_syn_heat1_0/checkpoints/superPointNet_100000_checkpoint.pth.tar'
+
 

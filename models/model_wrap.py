@@ -5,6 +5,7 @@
 
 import numpy as np
 import torch
+import time
 from torch.autograd import Variable
 import torch.backends.cudnn as cudnn
 import torch.optim
@@ -267,7 +268,10 @@ class SuperPointFrontend_torch(object):
         pts[0, :] = ys # abuse of ys, xs
         pts[1, :] = xs
         pts[2, :] = heatmap[xs, ys]  # check the (x, y) here
+        start = time.time()
         pts, _ = self.nms_fast(pts, H, W, dist_thresh=self.nms_dist)  # Apply NMS.
+        current = time.time() - start
+        print("nms time: ", current)
         inds = np.argsort(pts[2, :])
         pts = pts[:, inds[::-1]]  # Sort by confidence.
         # Remove points along border.
@@ -371,7 +375,7 @@ class SuperPointFrontend_torch(object):
         # print("heapmap shape: ", heatmap.shape)
         pts = [self.getPtsFromHeatmap(heatmap[i,:,:,:].cpu().detach().numpy()) for i in range(batch_size)]
         self.pts = pts
-        
+
 
 
         if self.subpixel:
@@ -421,7 +425,9 @@ class PointTracker(object):
     def __init__(self, max_length=2, nn_thresh=0.7):
         if max_length < 2:
             raise ValueError('max_length must be greater than or equal to 2.')
+        # 2
         self.maxl = max_length
+        # 1.0
         self.nn_thresh = nn_thresh
         self.all_pts = []
         for n in range(self.maxl):

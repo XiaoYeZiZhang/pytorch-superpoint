@@ -30,19 +30,27 @@ from models.model_wrap import SuperPointFrontend_torch
 
 @torch.no_grad()
 class Val_model_heatmap(SuperPointFrontend_torch):
+    # config: 一系列配置
     def __init__(self, config, device='cpu', verbose=False):
         self.config = config
+        # model:SuperPointNet_gauss2
         self.model = self.config['name']
+        # params: none
         self.params = self.config['params']
+        # pretrained: 17000
         self.weights_path = self.config['pretrained']
+        # gpu
         self.device=device
 
         ## other parameters
 
         # self.name = 'SuperPoint'
         # self.cuda = cuda
+        # 4
         self.nms_dist = self.config['nms']
+        # 0.015
         self.conf_thresh = self.config['detection_threshold']
+        # 1.0
         self.nn_thresh = self.config['nn_thresh']  # L2 descriptor distance for good match.
         self.cell = 8  # deprecated
         self.cell_size = 8  # Size of each output cell. Keep this fixed.
@@ -57,37 +65,51 @@ class Val_model_heatmap(SuperPointFrontend_torch):
         self.patches = None
         pass
 
-
+    # 加载参数
     def loadModel(self):
         # model = 'SuperPointNet'
         # params = self.config['model']['subpixel']['params']
         from utils.loader import modelLoader
+        # 在superpointnet_gauss2中加载网络
         self.net = modelLoader(model=self.model, **self.params)
-
+        # 加载预训练模型
         checkpoint = torch.load(self.weights_path,
                                 map_location=lambda storage, loc: storage)
-        self.net.load_state_dict(checkpoint['model_state_dict'])
 
+        # it is right to change from pth.tar to pt
+        # model1 = torch.load("/home/zhangye/Develope/superpoint_pytorch/superpoint/logs/magicpoint_synth/checkpoints/superPointNet_743_checkpoint.pth.tar", self.device)
+        # self.net.load_state_dict(model1['model_state_dict'])
+        # traced_script_module = torch.jit.trace(self.net, torch.ones(1,1,640,480),strict=False)
+        # traced_script_module.cuda()
+        # traced_script_module.save("/home/zhangye/data1/superpoint_v1_test3.pt")
+
+        # print(checkpoint['model_state_dict'])
+        self.net.load_state_dict(checkpoint['model_state_dict'])
         self.net = self.net.to(self.device)
+
+        ######### output model for c++ object recognition########
+        traced_script_module = torch.jit.trace(self.net, torch.ones(1, 1, 480, 640).to(self.device), strict=False)
+        traced_script_module.save("/home/zhangye/data1/traced_superpoint_model.pt")
+
         logging.info('successfully load pretrained model from: %s', self.weights_path)
         pass
 
     def extract_patches(self, label_idx, img):
         """
-        input: 
+        input:
             label_idx: tensor [N, 4]: (batch, 0, y, x)
             img: tensor [batch, channel(1), H, W]
         """
         from utils.losses import extract_patches
         patch_size = self.config['params']['patch_size']
-        patches = extract_patches(label_idx.to(self.device), img.to(self.device), 
+        patches = extract_patches(label_idx.to(self.device), img.to(self.device),
             patch_size=patch_size)
         return patches
         pass
 
     def run(self, images):
         """
-        input: 
+        input:
             images: tensor[batch(1), 1, H, W]
 
         """
@@ -105,7 +127,8 @@ class Val_model_heatmap(SuperPointFrontend_torch):
             heatmap = train_agent.flatten_64to1(semi, cell_size=self.cell_size)
         elif channel == 65:
             heatmap = flattenDetection(semi, tensor=True)
-            
+
+
         heatmap_np = toNumpy(heatmap)
         self.heatmap = heatmap_np
         return self.heatmap
@@ -114,6 +137,7 @@ class Val_model_heatmap(SuperPointFrontend_torch):
     def heatmap_to_pts(self):
         heatmap_np = self.heatmap
 
+        # 通过阈值和极大值抑制得到好的特征点， 三个通道，分别是x,y,value
         pts_nms_batch = [self.getPtsFromHeatmap(h) for h in heatmap_np] # [batch, H, W]
         self.pts_nms_batch = pts_nms_batch
         return pts_nms_batch
@@ -200,8 +224,3 @@ if __name__ == '__main__':
         print("desc_sparse[0]: ", desc_sparse[0].shape)
 
 # pts, desc, _, heatmap
-
-
-
-
-

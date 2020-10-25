@@ -20,6 +20,10 @@ from tqdm import tqdm
 from utils.draw import plot_imgs
 from utils.logging import *
 
+visualize_for_my_data = False
+
+
+
 def draw_matches_cv(data, matches, plot_points=True):
     if plot_points:
         keypoints1 = [cv2.KeyPoint(p[1], p[0], 1) for p in data['keypoints1']]
@@ -31,7 +35,9 @@ def draw_matches_cv(data, matches, plot_points=True):
         print(f"matches_pts: {matches_pts}")
         # keypoints1, keypoints2 = [], []
 
-    inliers = data['inliers'].astype(bool)
+    if ~visualize_for_my_data:
+        inliers = data['inliers'].astype(bool)
+
     # matches = np.array(data['matches'])[inliers].tolist()
     # matches = matches[inliers].tolist()
     def to3dim(img):
@@ -73,6 +79,7 @@ def to3dim(img):
 
 def evaluate(args, **options):
     # path = '/home/yoyee/Documents/SuperPoint/superpoint/logs/outputs/superpoint_coco/'
+    # path include xx.npz
     path = args.path
     files = find_files_with_ext(path)
     correctness = []
@@ -128,6 +135,7 @@ def evaluate(args, **options):
         image = data['image']
         warped_image = data['warped_image']
         keypoints = data['prob'][:, [1, 0]]
+        # print top 3 keypoint position
         print("keypoints: ", keypoints[:3,:])
         warped_keypoints = data['warped_prob'][:, [1, 0]]
         print("warped_keypoints: ", warped_keypoints[:3,:])
@@ -357,15 +365,24 @@ def evaluate(args, **options):
                     return matches[ran_idx], ran_idx
                 image = data['image']
                 warped_image = data['warped_image']
-                ## outliers
-                matches_temp, _ = get_random_m(matches_out, ratio)
-                # print(f"matches_in: {matches_in.shape}, matches_temp: {matches_temp.shape}")
-                draw_matches(image, warped_image, matches_temp, lw=0.5, color='r',
-                            filename=None, show=False, if_fig=True)
-                ## inliers
-                matches_temp, _ = get_random_m(matches_in, ratio)
-                draw_matches(image, warped_image, matches_temp, lw=1.0, 
-                        filename=filename, show=False, if_fig=False)
+                if visualize_for_my_data:
+                    # show all the matches.
+                    draw_matches(image, warped_image, matches_out, lw=0.5, color='r',
+                                 filename=None, show=False, if_fig=True)
+                    ## inliers
+                    draw_matches(image, warped_image, matches_temp, lw=1.0,
+                                 filename=filename, show=False, if_fig=False)
+
+                else:
+                    ## outliers
+                    matches_temp, _ = get_random_m(matches_out, ratio)
+                    # print(f"matches_in: {matches_in.shape}, matches_temp: {matches_temp.shape}")
+                    draw_matches(image, warped_image, matches_temp, lw=0.5, color='r',
+                                 filename=None, show=False, if_fig=True)
+                    ## inliers
+                    matches_temp, _ = get_random_m(matches_in, ratio)
+                    draw_matches(image, warped_image, matches_temp, lw=1.0,
+                            filename=filename, show=False, if_fig=False)
 
 
 
@@ -447,6 +464,171 @@ def evaluate(args, **options):
         **dict_of_lists,
     )
 
+def evaluate_box(args, **options):
+    # path inlcude xx.npz
+    path = args.path
+    files = find_files_with_ext(path)
+    correctness = []
+    est_H_mean_dist = []
+    repeatability = []
+    mscore = []
+    mAP = []
+    localization_err = []
+    rep_thd = 3
+    save_file = path + "/result.txt"
+    inliers_method = 'cv'
+    compute_map = True
+    verbose = True
+    top_K = 1000
+    print("top_K: ", top_K)
+
+    reproduce = True
+    if reproduce:
+        logging.info("reproduce = True")
+        np.random.seed(0)
+        print(f"test random # : np({np.random.rand(1)})")
+
+    # create output dir
+    if args.outputImg:
+        path_warp = path + '/warping'
+        os.makedirs(path_warp, exist_ok=True)
+        path_match = path + '/matching'
+        os.makedirs(path_match, exist_ok=True)
+        path_rep = path + '/repeatibility' + str(rep_thd)
+        os.makedirs(path_rep, exist_ok=True)
+
+    # for i in range(2):
+    #     f = files[i]
+    print(f"file: {files[0]}")
+    files.sort(key=lambda x: int(x[:-4]))
+    from numpy.linalg import norm
+    from utils.draw import draw_keypoints
+    from utils.utils import saveImg
+
+    for f in tqdm(files):
+        f_num = f[:-4]
+        data = np.load(path + '/' + f)
+        print("load successfully. ", f)
+
+        # 240 * 320
+        image = data['image']
+        warped_image = data['warped_image']
+        keypoints = data['prob'][:, [1, 0]]
+        # print top 3 keypoint position
+        print("keypoints: ", keypoints[:3, :])
+        warped_keypoints = data['warped_prob'][:, [1, 0]]
+        print("warped_keypoints: ", warped_keypoints[:3, :])
+        # print("Unwrap successfully.")
+
+        if args.homography:
+            keypoints = data['prob'][:, [1, 0]]
+            # warped_keypoints = data['warped_prob'][:,:2]
+            warped_keypoints = data['warped_prob'][:, [1, 0]]
+            # desc = data['desc'][keypoints[:, 0], keypoints[:, 1]]
+            # warped_desc = data['warped_desc'][warped_keypoints[:, 0],
+            #                                   warped_keypoints[:, 1]]
+            desc = data['desc']
+            warped_desc = data['warped_desc']
+            bf = cv2.BFMatcher(cv2.NORM_L2, crossCheck=True)
+            cv2_matches = bf.match(desc, warped_desc)
+            matches_idx = np.array([m.queryIdx for m in cv2_matches])
+            m_keypoints = keypoints[matches_idx, :]
+            matches_idx = np.array([m.trainIdx for m in cv2_matches])
+            m_dist = np.array([m.distance for m in cv2_matches])
+            m_warped_keypoints = warped_keypoints[matches_idx, :]
+            matches = np.hstack((m_keypoints[:, [1, 0]], m_warped_keypoints[:, [1, 0]]))
+            print(f"matches: {matches.shape}")
+
+            result = {
+            'keypoints1': keypoints,
+            'keypoints2': warped_keypoints,
+            'matches': matches,  # cv2.match
+            'cv2_matches': cv2_matches,
+            'mscores': m_dist/(m_dist.max()), # normalized distance
+            }
+
+            if args.outputImg:
+                # draw warping
+                output = result
+                # img1 = image/255
+                # img2 = warped_image/255
+                ## plot filtered image
+                # draw matches
+                result['image1'] = image
+                result['image2'] = warped_image
+                matches = np.array(result['cv2_matches'])
+                ratio = 0.2
+                ran_idx = np.random.choice(matches.shape[0], int(matches.shape[0] * ratio))
+
+                # 240 * 640 * 3 two images
+                # opencv find matching
+                img = draw_matches_cv(result, matches[ran_idx], plot_points=True)
+                # filename = "correspondence_visualization"
+                plot_imgs([img], titles=["Two images feature correspondences"], dpi=200)
+                plt.tight_layout()
+                plt.savefig(path_match + '/' + f_num + 'cv.png', bbox_inches='tight')
+                plt.close('all')
+                # pltImshow(img)
+
+        if args.plotMatching:
+            # superpoint find matching
+            matches = result['matches']  # np [N x 5]
+            print("matches size: ", matches.shape)
+            if matches.shape[0] > 0:
+                from utils.draw import draw_matches
+                filename = path_match + '/' + f_num + 'm.png'
+                ratio = 0.05
+                #inliers = result['inliers']
+
+
+                def get_random_m(matches, ratio):
+                    ran_idx = np.random.choice(matches.shape[0], int(matches.shape[0] * ratio))
+                    return matches[ran_idx], ran_idx
+
+                image = data['image']
+                warped_image = data['warped_image']
+                ## outliers
+                matches_temp, _ = get_random_m(matches, ratio)
+                # print(f"matches_in: {matches_in.shape}, matches_temp: {matches_temp.shape}")
+                draw_matches(image, warped_image, matches_temp, lw=1.0,
+                             filename=filename, show=False, if_fig=False)
+
+
+    # save to files
+    with open(save_file, "a") as myfile:
+        myfile.write("path: " + path + '\n')
+        myfile.write("output Images: " + str(args.outputImg) + '\n')
+        if args.repeatibility:
+            myfile.write("repeatability threshold: " + str(rep_thd) + '\n')
+            myfile.write("repeatability: " + str(1) + '\n')
+            myfile.write("localization error: " + str(1) + '\n')
+        if args.homography:
+            myfile.write("Homography estimation: " + '\n')
+            myfile.write("Homography threshold: " + str(1) + '\n')
+            myfile.write("Average correctness: " + str(1) + '\n')
+
+            # myfile.write("mean est H dist: " + str(est_H_mean_dist.mean()) + '\n')
+
+            if compute_map:
+                myfile.write("nn mean AP: " + str(1) + '\n')
+            myfile.write("matching score: " + str(1) + '\n')
+
+    dict_of_lists = {
+        'repeatability': repeatability,
+        'localization_err': localization_err,
+        'correctness': np.array(correctness),
+        'homography_thresh': 1,
+        'mscore': mscore,
+        'mAP': np.array(mAP),
+        # 'est_H_mean_dist': est_H_mean_dist
+    }
+
+    filename = f'{save_file[:-4]}.npz'
+    logging.info(f"save file: {filename}")
+    np.savez(
+        filename,
+        **dict_of_lists,
+    )
 
 if __name__ == '__main__':
     import argparse
@@ -462,4 +644,7 @@ if __name__ == '__main__':
     parser.add_argument('-homo', '--homography', action='store_true')
     parser.add_argument('-plm', '--plotMatching', action='store_true')
     args = parser.parse_args()
-    evaluate(args)
+    if visualize_for_my_data:
+        evaluate_box(args)
+    else:
+        evaluate(args)

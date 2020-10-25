@@ -82,6 +82,7 @@ def compute_homography(data, keep_k_points=1000, correctness_thresh=3, orb=False
 
     # Match the keypoints with the warped_keypoints with nearest neighbor search
     # def get_matches():
+    # false
     if orb:
         desc = desc.astype(np.uint8)
         warped_desc = warped_desc.astype(np.uint8)

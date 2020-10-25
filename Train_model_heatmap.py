@@ -701,6 +701,7 @@ if __name__ == "__main__":
     train_agent.train_loader = train_loader
     # train_agent.val_loader = val_loader
 
+    # using Train_model_frontend.py loadModel() to implement
     train_agent.loadModel()
     train_agent.dataParallel()
     train_agent.train()
